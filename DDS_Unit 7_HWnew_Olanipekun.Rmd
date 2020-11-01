@@ -1,0 +1,355 @@
+---
+title: "DDS Unit 7 homework"
+author: "John Olanipekun"
+date: "9/28/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Load the libraries
+```{r}
+
+
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(GGally)
+library(naniar)
+library(XML)
+library(dplyr)
+library(tidyr)
+library(stringi)
+library(rvest) 
+library(RCurl)
+library(class)
+library(caret)
+library(e1071)
+library(httr)
+library(jsonlite)
+```
+
+I imported the data from github
+
+```{r}
+titanic_trainset <- read_csv(file.choose())
+
+class(titanic_trainset)
+dim(titanic_trainset)
+```
+
+
+
+
+
+```{r}
+str(titanic_train_df)
+
+titanic_age_class = titanic_trainset %>% filter(Age != "NA") %>% select(Age, Pclass, Survived)
+
+```
+
+View null values for possible removal
+
+```{r}
+gg_miss_var(titanic_age_class)
+
+```
+
+Substituting values in Survived column
+```{r}
+titanic_train_df1 <- titanic_train_df %>%
+  mutate(Survived_YN = case_when(
+                                        Survived == 0 ~ "No",
+                                        Survived == 1 ~ "Yes")) #creates a column that replaces 0 and 1
+
+titanic_train_df1$Survived_YN <- as.factor(titanic_train_df1$Survived_YN) #converted the new column to factor
+titanic_train_df3 <- titanic_train_df1
+titanic_train_df3$Pclass <- as.numeric(titanic_train_df3$Pclass) #convert factor to numeric
+titanic_train_df3$Survived_YN <- as.character(titanic_train_df3$Survived_YN) #convert factor to character
+titanic_train_df3$Survived_YN <- as.factor(titanic_train_df3$Survived_YN) #return this column to factor
+titanic_train_df3 <- as.data.frame(titanic_train_df3)#convert tibble to dataframe for peace of mind
+head(titanic_train_df3)
+
+str(titanic_train_df3)
+dim(titanic_train_df3) 
+```
+
+
+
+```{r}
+Age = c(30, 30, 30)
+Pclass=c(1, 2, 3)
+
+df_classify1 <- tibble(Age = Age, Pclass=Pclass)
+
+
+#'Survived' is the response
+model = naiveBayes(titanic_train_df3[,c(1,2)], titanic_train_df3$Survived_YN)
+predict(model,df_classify1) #Just classification/label
+predict(model,df_classify1, type = "raw") #gives probabilities 
+
+
+
+```
+
+
+
+
+```{r}
+titanicClean = titanic_train_df3 %>% filter(!is.na(Age) & !is.na(Pclass))
+set.seed(4)
+trainIndices = sample(seq(1:length(titanicClean$Age)),round(.7*length(titanicClean$Age)))
+trainTitanic = titanicClean[trainIndices,]
+testTitanic = titanicClean[-trainIndices,]
+
+```
+
+```{r}
+model_2 = naiveBayes(trainTitanic[,c(1,2)], trainTitanic$Survived_YN, laplace = 0.1)
+class_test <- predict(model_2,testTitanic[,c(1,2)])
+label_test <- predict(model_2,testTitanic[,c(1,2)], type = "raw")
+
+table(predict(model_2,testTitanic[,c(1,2)]),as.factor(testTitanic$Survived_YN))
+CM2 = confusionMatrix(table(predict(model_2,testTitanic[,c(1,2)]),as.factor(testTitanic$Survived_YN)))
+CM2
+
+```
+
+New Seed (10)
+New Seed (11)
+New Seed (12)
+
+
+```{r}
+titanicClean = titanic_train_df3 %>% filter(!is.na(Age) & !is.na(Pclass))
+set.seed(10)
+trainIndices = sample(seq(1:length(titanicClean$Age)),round(.7*length(titanicClean$Age)))
+trainTitanic = titanicClean[trainIndices,]
+testTitanic = titanicClean[-trainIndices,]
+
+model_2 = naiveBayes(trainTitanic[,c(1,2)], trainTitanic$Survived_YN, laplace = 0.1)
+class_test <- predict(model_2,testTitanic[,c(1,2)])
+label_test <- predict(model_2,testTitanic[,c(1,2)], type = "raw")
+
+table(predict(model_2,testTitanic[,c(1,2)]),as.factor(testTitanic$Survived_YN))
+CM10 = confusionMatrix(table(predict(model_2,testTitanic[,c(1,2)]),as.factor(testTitanic$Survived_YN)))
+CM10
+
+```
+
+
+```{r}
+titanicClean = titanic_train_df3 %>% filter(!is.na(Age) & !is.na(Pclass))
+set.seed(11)
+trainIndices = sample(seq(1:length(titanicClean$Age)),round(.7*length(titanicClean$Age)))
+trainTitanic = titanicClean[trainIndices,]
+testTitanic = titanicClean[-trainIndices,]
+
+model_2 = naiveBayes(trainTitanic[,c(1,2)], trainTitanic$Survived_YN, laplace = 0.1)
+class_test <- predict(model_2,testTitanic[,c(1,2)])
+label_test <- predict(model_2,testTitanic[,c(1,2)], type = "raw")
+
+table(predict(model_2,testTitanic[,c(1,2)]),as.factor(testTitanic$Survived_YN))
+CM11 = confusionMatrix(table(predict(model_2,testTitanic[,c(1,2)]),as.factor(testTitanic$Survived_YN)))
+CM11
+```
+
+
+
+```{r}
+titanicClean = titanic_train_df3 %>% filter(!is.na(Age) & !is.na(Pclass))
+set.seed(15)
+trainIndices = sample(seq(1:length(titanicClean$Age)),round(.7*length(titanicClean$Age)))
+trainTitanic = titanicClean[trainIndices,]
+testTitanic = titanicClean[-trainIndices,]
+
+model_2 = naiveBayes(trainTitanic[,c(1,2)], trainTitanic$Survived_YN, laplace = 0.1)
+class_test <- predict(model_2,testTitanic[,c(1,2)])
+label_test <- predict(model_2,testTitanic[,c(1,2)], type = "raw")
+
+table(predict(model_2,testTitanic[,c(1,2)]),as.factor(testTitanic$Survived_YN))
+CM12 = confusionMatrix(table(predict(model_2,testTitanic[,c(1,2)]),as.factor(testTitanic$Survived_YN)))
+CM12
+```
+
+
+```{r}
+# NB Loop for average of many training / test partition
+set.seed(15)
+iterations = 100
+matcol = 3
+masterStats = matrix(nrow = iterations, ncol = matcol) # holder matrix for Accuracy, Sensitivity and Specificity
+splitPerc = .7 #Training / Test split Percentage
+
+for(j in 1:iterations)
+{
+  
+  trainIndices = sample(seq(1:length(titanicClean$Age)),round(splitPerc*length(titanicClean$Age)))
+  trainTitanic = titanicClean[trainIndices,]
+  testTitanic = titanicClean[-trainIndices,]
+  model_2 = naiveBayes(trainTitanic[,c(1,2)], trainTitanic$Survived_YN, laplace = 0.1)
+  table(predict(model_2,testTitanic[,c(1,2)]),as.factor(testTitanic$Survived_YN))
+  CM15 = confusionMatrix(table(predict(model_2,testTitanic[,c(1,2)]),as.factor(testTitanic$Survived_YN)))
+  masterStats[j] = CM15$overall[1]
+  masterStats[j,2] = CM15$byClass[1] #appends Sensitivity to the 2nd column of matrix
+  masterStats[j,3] = CM15$byClass[2] #appends Specificity to the 3rd column of matrix
+}
+
+colnames(masterStats) <- c("Accuracy", "Sensitivity", "Specificity")
+MeanStats = colMeans(masterStats)
+
+MeanStats
+
+```
+
+Part 1:
+Adding Sex
+
+```{r}
+titanic_age_cl_sex = titanic_trainset %>% filter(Age != "NA") %>% select(Age, Pclass, Sex, Survived)
+
+```
+
+
+```{r}
+titanic_train_sex <- titanic_age_cl_sex %>%
+  mutate(Survived_YN = case_when(
+                                        Survived == 0 ~ "No",
+                                        Survived == 1 ~ "Yes")) #creates a column that replaces 0 and 1
+
+titanic_train_sex$Survived_YN <- as.factor(titanic_train_sex$Survived_YN) #converted the new column to factor
+titanic_train_sex_df <- titanic_train_sex
+titanic_train_sex_df$Pclass <- as.numeric(titanic_train_sex_df$Pclass) #convert factor to numeric
+titanic_train_sex_df <- as.data.frame(titanic_train_sex_df) #convert tibble to data frame for peace of mind
+```
+
+
+
+```{r}
+titanicClean2 = titanic_train_sex_df %>% filter(!is.na(Age) & !is.na(Pclass))
+gg_miss_var(titanicClean2) #no missing values
+```
+
+
+Using the Age sex and Pclass for the Bayes model
+
+
+```{r}
+set.seed(4)
+trainIndices2 = sample(seq(1:length(titanicClean2$Age)),round(.7*length(titanicClean2$Age)))
+trainTitanic2 = titanicClean2[trainIndices2,]
+testTitanic2 = titanicClean2[-trainIndices2,]
+
+model_3 = naiveBayes(trainTitanic2[,c(1,2,3)], trainTitanic2$Survived_YN, laplace = 0.1)
+class_test2 <- predict(model_3,testTitanic2[,c(1,2,3)])
+label_test2 <- predict(model_3,testTitanic2[,c(1,2,3)], type = "raw")
+
+table(predict(model_3,testTitanic2[,c(1,2,3)]),as.factor(testTitanic2$Survived_YN))
+CM4a = confusionMatrix(table(predict(model_3,testTitanic2[,c(1,2,3)]),as.factor(testTitanic2$Survived_YN)))
+CM4a
+```
+
+
+```{r}
+# NB Loop for average of many training / test partition
+set.seed(4)
+iterations = 100
+matcol = 3
+masterStats2 = matrix(nrow = iterations, ncol = matcol) # holder matrix for Accuracy, Sensitivity and Specificity
+splitPerc = .7 #Training / Test split Percentage
+
+for(j in 1:iterations)
+{
+  
+  trainIndices2 = sample(seq(1:length(titanicClean2$Age)),round(splitPerc*length(titanicClean2$Age)))
+  trainTitanic2 = titanicClean2[trainIndices2,]
+  testTitanic2 = titanicClean2[-trainIndices2,]
+  model_2 = naiveBayes(trainTitanic2[,c(1,2,3)], trainTitanic2$Survived_YN, laplace = 0.1)
+  table(predict(model_2,testTitanic2[,c(1,2,3)]),as.factor(testTitanic2$Survived_YN))
+  CM4 = confusionMatrix(table(predict(model_2,testTitanic2[,c(1,2)]),as.factor(testTitanic2$Survived_YN)))
+  masterStats2[j] = CM4$overall[1]
+  masterStats2[j,2] = CM4$byClass[1] #appends Sensitivity to the 2nd column of matrix
+  masterStats2[j,3] = CM4$byClass[2] #appends Specificity to the 3rd column of matrix
+}
+
+colnames(masterStats2) <- c("Accuracy", "Sensitivity", "Specificity")
+MeanStats2 = colMeans(masterStats2)
+MeanStats2
+
+
+```
+
+
+
+```{r}
+# Demo the multinomial NB classifier
+
+# iris
+
+
+library(e1071)
+#notice we are not splitting the data set into training versus test.
+
+model_4 = naiveBayes(iris[,c(1:4)],iris$Species,laplace = 1)
+table(predict(model_4,iris[,c(1:4)]),iris$Species)
+
+CM_3 = confusionMatrix(table(predict(model_4,iris[,c(1:4)]),iris$Species)) #the actual is on top because i put the predicted values in first in the table and the actual values second.
+
+CM_3
+
+
+
+# NB Loop for average of many training / test partition
+
+iterations = 100
+matcol = 3
+masterStats_3 = matrix(nrow = iterations, ncol = matcol)
+
+splitPerc = .7 #Training / Test split Percentage
+
+for(j in 1:iterations)
+{
+  
+  trainIndices = sample(1:dim(iris)[1],round(splitPerc * dim(iris)[1]))
+  train = iris[trainIndices,]
+  test = iris[-trainIndices,]
+  
+  model = naiveBayes(train[,c(1:4)],as.factor(train$Species),laplace = 1)
+  table(predict(model,test[,c(1:4)]),as.factor(test$Species))
+  CM_3 = confusionMatrix(table(predict(model,test[,c(1:4)]),as.factor(test$Species)))
+  masterStats_3[j] = CM_3$overall[1]
+  masterStats_3[j,2] = CM_3$byClass[1] #appends Sensitivity to the 2nd column of matrix
+  masterStats_3[j,3] = CM_3$byClass[2] #appends Specificity to the 3rd column of matrix
+}
+
+colnames(masterStats_3) <- c("Accuracy", "Sensitivity", "Specificity")
+MeanStat_3 = colMeans(masterStats_3)
+
+masterStats_3
+MeanStat_3
+
+```
+
+KNN for the iris data set
+
+
+```{r}
+splitPerc = .70
+
+trainIndices = sample(1:dim(iris)[1],round(splitPerc * dim(iris)[1]))
+
+iris_train_df = iris[trainIndices,]
+
+#This is just saying, get me the remaining data set(i.e. 30%).
+iris_test_df = iris[-trainIndices,]
+
+classifications_iris <- knn(iris_train_df[,c(1,2)], iris_test_df[,c(1,2)], iris_train_df$Species, k = 25, prob = TRUE)
+table(classifications_iris,iris_test_df$Species)
+CM1a = confusionMatrix(table(classifications_iris,iris_test_df$Species))
+CM1a
+head(classifications_iris)
+```
+
