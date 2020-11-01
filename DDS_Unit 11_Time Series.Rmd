@@ -1,0 +1,251 @@
+---
+title: "Unit 11_Time Series"
+author: "John Olanipekun"
+date: "11/1/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(e1071)
+```
+
+
+```{r}
+library(fpp)
+```
+
+
+# 1. SES MODEL FOR AUS AIR
+The objective is to capture the trend in the data and predict out 3 years.
+
+```{r}
+data(ausair)
+#returns a ts object for just that section of the historical data
+air = window(ausair, start = 1990, end = 2004)
+
+# Always plot the data first! 
+plot(air,ylab = "Airline Passegners", xlab = "Year", main = "Airline Passengers")
+
+
+```
+
+### the ses model
+```{r}
+#fit 3 different simple exponential smoothing models ... how are they different?
+# what does the h parameter do? 
+fit1 = ses(air, initial = "simple",alpha = .2,h = 3) #alpha is the smoothing parameter,simple =1st value of the data set, h =predict out 3 years or 3 time points.
+fit2 = ses(air,initial = "simple",alpha = .6, h = 3)
+fit3 = ses(air, h = 3) #defaults
+
+#plots models on top of the original data
+
+
+
+```
+
+
+
+```{r}
+# the forecast package has a nice accuracy funciton with various metrics just pass it the 
+# the model and the data!  (This is the "training" data)
+accuracy(fit1, ausair)
+accuracy(fit2, ausair)
+accuracy(fit3, ausair)
+
+
+```
+
+
+
+```{r}
+#Reset the plot
+plot(air,ylab = "Airline Passegners", xlab = "Year", type = "o", xlim = c(1990, 2008),ylim = c(15,50), main = "Airline Passengers")
+#Plot the estimated values from the models .. the "fitted" values are the training values.
+lines(fitted(fit1), col = "blue", type = "o") #alpha = 0.2
+lines(fitted(fit2), col = "red", type = "o") #alpha = 0.6
+lines(fitted(fit3), col = "green", type = "o") #default params, alpha = 0.8
+
+```
+
+
+
+```{r}
+# let s now take out the  $mean values are the forecasts.
+#In SES the forecast is the mean of the previous value
+lines(fit1$mean, col = "blue", type = "o")
+lines(fit2$mean, col = "red", type = "o")
+lines(fit3$mean, col = "green", type = "o") #looks better as it follows the original data
+```
+
+
+```{r}
+# These are the actual values!  Compare visually with the forecasts! Not very great.
+air2008 = window(ausair, start = 1990, end = 2007)
+points(air2008, type = "o")
+
+```
+
+
+```{r}
+# Compare the forecasts with the actual values with various fit metrics.  
+accuracy(fit1, air2008)
+accuracy(fit2, air2008)
+accuracy(fit3, air2008)
+```
+
+
+###Holts
+#2 Holt's Linear Trend Model for AUS AIR: Additive and multiplicative models
+Multiplicative model gives a constant GROWTH RATE for forecast.
+Additive model gives a constant RATE for forecast..
+
+We need to later apply damping to make the predicted trend more realistic and not get that constant rate. we want the rate to flatten out over time.
+
+```{r}
+#Holts needs two values: an initial value of the series and value for initial change in the series(i.e. slope) (can be simply y2 - y1)
+#(or fit a linear trend model to the first few observations and use resulting estimate of intercept and slope parameters as initial value for level and trend respectively)
+#alpha (level of series smoothing) and beta (slope smoothing) are smoothing params. h means predict out 5(5 years here).
+fit1h = holt(air, alpha = .8, beta = .2, initial = "simple", h = 5) #linear trend (additive model)
+fit1h$model$state #l = level, b = slope for each state in the model.
+fit2h = holt(air, alpha = .8, beta = .2, initial = "simple", exponential = TRUE, h = 5)#exponential means I am assuming a multiplicative model rather than additive.
+
+```
+
+
+
+```{r}
+# Check out estimated values of the "training" data from the first holt model 
+fitted(fit1h) #output includes the predicted values.
+# Check out the forecast value (h of them)
+fit1h$mean #the 5 predicted values
+
+```
+
+###plot the fitted values out on original data plot
+```{r}
+# Reset the Plot!
+plot(air,ylab = "Airline Passegners", xlab = "Year", type = "o", xlim = c(1990, 2009),ylim = c(15,60))
+#Plot each models estimated values of the training data (Do these one by one to see the differences)
+lines(fitted(fit1h),col = "blue", type= "o") #additive model
+lines(fitted(fit2h), col = "red", type= "o")#multiplicative effect model(exponential)
+#Plot each models forecasts (Do these one by one to see the differences)
+lines(fit1h$mean, col = "blue", type= "o") #just a straight a line
+lines(fit2h$mean,col = "red", type= "o")#exponential is more optimistic as it goes up and curves accordingly
+
+#predicted values list
+fit1h$mean
+fit2h$mean
+
+```
+
+###Damping
+```{r}
+# Fit another model ... damped!  
+fit3h = holt(air, alpha = .8, beta = .2, damped = TRUE, initial = "optimal", h = 5)
+fit3h.init = holt(air, alpha = .8, beta = .2, damped = TRUE, initial = "simple", h = 5)#use initial value of series
+# Plot the fitted value (estimated from training data)
+lines(fitted(fit3h), col = "darkgreen", type= "o")
+# Plot the forecasts
+lines(fit3h$mean,col = "darkgreen", type= "o")#damped trend, more realistic. trend reduces as we go out in time
+
+lines(fitted(fit3h.init),col = "yellow", type= "o") #result is the same as "optimal"
+
+```
+
+###Evaluation
+Using the fit$model method you can compare the stats for the model. lower AIC, BIC s are better model. Holt damped is better than other in this case.
+Accuracy. Calculated and compared.
+```{r}
+# Fit another model ... what is the difference?  
+fit4h = holt(air, alpha = .8, beta = .2, damped = TRUE, initial = "optimal", exponential = TRUE, h = 5)
+# Plot the fitted value (estimated from training data)
+#best fit of them all (damped multiplicative method)
+lines(fitted(fit4h), col = "cyan", type= "o")
+#Plot the forecasts
+lines(fit4h$mean,col = "cyan", type= "o")
+
+```
+
+
+Accuracy. Calculated and compared.
+```{r}
+# with implicit Test set... it figures out by the time which are training and which are test. 
+accuracy(fit1h, ausair)
+accuracy(fit2h, ausair)
+accuracy(fit3h, ausair)
+
+```
+
+
+```{r}
+#with explicit Test set ... (same output)
+airTest = window(ausair, start = 2005)
+accuracy(fit1h, airTest)
+accuracy(fit2h, airTest)
+accuracy(fit3h, airTest)
+
+```
+
+Compare models in terms of slope and levels over time
+```{r}
+#plot level and slope components for Holt's linear trend
+plot(fit1h$model$state)
+plot(fit2h$model$state)
+plot(fit3h$model$state) #exponential
+```
+
+
+```{r}
+#Add the actual values to visually compare forecasts to actual values
+air2008 = window(ausair, start = 1990, end = 2009)
+points(air2008, type = "o")
+
+```
+
+
+
+
+Seasonal trend
+Holts-Winter model
+
+```{r}
+#Load the data
+data("austourists")
+
+
+# returns a ts object.  
+aust = window(austourists,start = 1999, end = 2004)
+
+#fit an additive and multiplicative model
+fit1s = hw(aust,seasonal = "additive",h = 40)
+fit2s = hw(aust,seasonal = "multiplicative",h = 40)
+
+#Plot the original data
+plot(aust,ylab = "Australian Tourists", xlab = "Year", type = "o", xlim = c(1999, 2014),ylim = c(15,60))
+#add the fitted values from the model (of the training data)
+lines(fitted(fit1s),col = "blue", type= "o")
+lines(fitted(fit2s), col = "red", type= "o")
+
+#Now add the forecasts (add these one at a time)
+lines(fit1s$mean, col = "blue", type= "o")
+lines(fit2s$mean,col = "red", type= "o")
+
+#Compare the accuracy
+accuracy(fit1s,austourists)
+accuracy(fit2s,austourists)
+
+#add the actual values to visually compare the forecasts to the actual values. 
+points(austourists, type = "o")
+
+```
+
+
