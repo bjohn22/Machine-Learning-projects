@@ -1,0 +1,877 @@
+---
+title: "Proj2_BoneMed"
+author: "John Olanipekun"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, error=TRUE)
+```
+
+```{r}
+library(aplore3)
+#load all necessary libraries
+library(tseries)
+library(forecast)
+library(ggplot2)
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(dplyr)
+library(GGally)
+library(naniar)
+library(XML)
+library(stringi)
+library(class)
+library(caret)
+library(e1071)
+library(ISLR)
+library(jtools)
+library(broom)
+library(broom.mixed)
+library(olsrr)
+library(mvinfluence)
+library(glmnet)
+library(MASS)
+library(psych)
+
+```
+
+
+# Question of Interest.  
+
+* Assessing risk factors and predicting if a woman with osteoperosis will have a bone fracture within the first year after joining the study.  
+* Based on QOI, the response is:  
+| fracture: Any fracture in first year (1: No, 2: Yes).  
+
+
+```{r}
+df <- glow_bonemed
+```
+
+
+
+
+
+
+
+* Take a peek at the data set
+```{r}
+bonemed <- df
+view(bonemed)
+str(bonemed)
+ncol(bonemed)
+describe(bonemed) # all columns have equal length so no missing value
+summary(bonemed) 
+```
+
+### Comments on above
+Class imbalance variables (n = 500 subjects)
+Smoke: No = 465, Yes = 35;
+premeno: No = 403, Yes = 65
+Response (fracture): No = 375, yes = 125 (i.e = 25% of observations)
+
+
+## Next
+```{r}
+#convert to factor: site_id, phy_id code
+#find the number of observations per level.
+bonemed$site_id<-factor(bonemed$site_id)
+bonemed$phy_id<-factor(bonemed$phy_id)
+
+attach(bonemed)
+
+
+
+
+#Move response variable to the end
+#re-order column to make response (fracture) the last column.
+as.data.frame(colnames(bonemed))
+bonemed_2 = bonemed[,c(1:18, 15)]
+bonemed_2 = subset(bonemed_2, select=-c(fracture))
+bonemed_2 <- bonemed_2 %>% rename(fracture = fracture.1)
+as.data.frame(colnames(bonemed_2))
+view(bonemed_2)
+
+
+```
+
+
+
+```{r}
+
+#How many unique values does phy_id hold and what is the number of levels. Max unique = 11 with so many that are 1. Few instances of this will not help our model so we drop this column.
+#For better generalization it was decided to remove the site_id
+
+nlevels(phy_id) #127 levels is too many to contain useful number of unique observations for the model. Physicians are part of a site so blocking for 'site_id' should be sufficient.
+
+bonemed_2 %>% group_by(phy_id, fracture) %>% summarise(n = n()) %>%  arrange(desc(n)) 
+
+bonemed_3 = subset(bonemed_2, select=-c(phy_id, site_id))
+as.data.frame(colnames(bonemed_3))
+str(bonemed_3)
+
+
+```
+
+
+
+
+```{r}
+#View the data distribution
+library(GGally)
+#This excludes the response in the plots.
+ggpairs(bonemed_3,columns=2:16,aes(colour=fracture))
+
+
+#Distribution of the yes and no in fracture attribute. Class imbalance
+counts <- table(bonemed_3$fracture)
+barplot(counts, main="Fracture distribution",
+   xlab="Yes_no")
+
+
+
+```
+
+### Comments on matrix plot
+* Fracture (response) is imbalanced so note the impact of that on other variables
+* Multicolinearity: Weight vs bmi, 
+
+
+```{r}
+#Fracture=Yes has 0.25 population proportion so any attribute that deviates from that has an effect on the response.e.g. prop of Fracture = yes is 0.41 among Priorfrac = Yes.
+attach(bonemed_3)
+
+
+#to get proportions that make sense
+prop.table(table(fracture,priorfrac),2) #priorfrac proportions has an effect on the fracture.
+prop.table(table(fracture,premeno),2) #For the same reason, it doesn't appear that pre-meno is a good candidate. Let s see if premeno covary with age, as expected
+
+#Test of independence Chi-squared. Use only for categorical variables.compares expected with observed.
+chisq.test(premeno, priorfrac) #p value = 0.98 high p-value, cannot reject null so the variables are independent
+
+
+
+#weight, cylinder
+t(aggregate(age~fracture,data=bonemed_3, summary)) #No difference in the median age of Fracture=Yes and Fracture = No. So no effect on basis of age
+
+
+```
+
+
+
+
+
+# Train/test split
+
+The function createDataPartition() can be used to create balanced splits of the data. If the y argument to this function is a factor, the random sampling occurs within each class and should preserve the overall class distribution of the data.
+
+
+```{r}
+library(caret)
+
+set.seed(123)
+trainIndex <- createDataPartition(bonemed_3$fracture, p = .8, 
+                                  list = FALSE, 
+                                  times = 1)
+
+head(trainIndex)
+
+boneTrain <- bonemed_3[ trainIndex,]
+boneTest  <- bonemed_3[-trainIndex,]
+
+dim(boneTrain)
+
+```
+
+
+
+
+```{r}
+library(MASS)
+library(tidyverse)
+library(car)
+library(ResourceSelection)
+library(car)
+
+#Feature selection
+#sub_id is the unique id of patients so should be removed for modeling.
+
+boneTrain1 = subset(boneTrain, select=-c(sub_id))
+
+model.main<-glm(fracture ~ ., data=boneTrain1,family = binomial(link="logit"))
+summary(model.main)
+library(ResourceSelection)
+library(car)
+
+
+model.null<-glm(fracture ~ 1, data=boneTrain1,family = binomial(link="logit"))
+model.null
+
+
+#This starts with a null model (model.null) and then builds up using forward selection up to all the predictors that were specified in the
+#main model(model.main) previously.
+step.log <-  step(model.null,
+              scope = list(upper=model.main),
+              direction="forward",
+              test="Chisq",
+              data=boneTrain1)
+summary(step.log)
+
+vif(step.log) #View multicolinearity.  vif >10 should be looked into.
+
+model_noVIF<-glm(fracture ~ . -weight -bonetreat, data=boneTrain1,family = binomial(link="logit"))
+model_noVIF
+
+exp(cbind("Odds ratio" = coef(step.log), confint.default(step.log, level = 0.95)))
+
+hoslem.test(step.log$y, fitted(step.log), g=10) #High p-value of 0.2817 means there is not enough evidence to to say the model is a poor fit. 
+#Hoslem test is not robust to co-variates.
+
+```
+
+### Comments.  
+* AIC is 400 with co-variates included and 406 without the covariates.   
+* priorFrac, MomfracYes and bonemed_fuYes have the highest effects. 
+* Even though they were selected, weight and bonetreat could be excluded due to high >10 vif. 
+* Excluding weight and bonetreat enables us to explain the effect/s of predictor attributes on the fracture attribute even though it resulted in higher AIC. 
+* But we will consider adding them to the final model since we primarily interested in prediction and removing them caused our aic to increase.
+
+
+
+
+
+### Multicolinearity
+* multicolinearity was revealed by vif among the continuous variables.
+* Try PCA on the continuous variables to mine and maximize the relationship among them. It will weed out the multicolinearity issue. This technique will help with the bmi-weight covariates  
+* Then we merge the remaining categorical variables with the principal components. 
+
+
+```{r}
+
+pc.result<-prcomp(boneTrain1[,2:5],scale.=TRUE) #scale =True will use correlation matrix instead of the covariance.
+pc.scores<-pc.result$x
+pc.scores<-data.frame(pc.scores)
+pc.scores$sub_id<-boneTrain$sub_id
+pc.result
+str(pc.scores)
+boneTrain_pc <- merge(boneTrain, pc.scores, by = "sub_id") #add PCs to the dataset, remove the previous raw attributes.
+
+
+```
+
+
+#scree plot
+```{r}
+#Scree plot
+eigenvals<-(pc.result$sdev)^2
+plot(1:4,eigenvals/sum(eigenvals),type="l",main="Scree Plot PC's",ylab="Prop. Var. Explained",ylim=c(0,1))
+cumulative.prop<-cumsum(eigenvals/sum(eigenvals))
+lines(1:4,cumulative.prop,lty=2)
+
+
+#Use ggplot2 to plot the first few pc's
+ggplot(data = boneTrain_pc, aes(x = PC1, y = PC2)) +
+  geom_point(aes(col=fracture), size=1)+
+  ggtitle("PCA of Bonemed")
+# we don't see very clear separation.
+
+
+#I get more than 80% of the variance explained by PC1 and PC2. PC 3 and 4 explain the remaining 20% So I will just use PC1 and PC2.
+
+
+attach(boneTrain_pc)
+#as.data.frame(colnames(boneTrain_pc1))
+boneTrain_pc1 = subset(boneTrain_pc, select=-c(sub_id,age,weight,height,bmi, PC3, PC4)) #remove the continuous variables + ensure fracture is last
+boneTrain_pc1$Fracture = boneTrain_pc1$fracture
+as.data.frame(colnames(boneTrain_pc1))
+boneTrain_pc1 = subset(boneTrain_pc1, select=-c(fracture, site_id)) #last wrangling. Clean data set with PCs ready for refit.
+
+view(boneTrain_pc1) #sanity check
+```
+
+
+refit
+
+```{r}
+full.log2<-glm(Fracture~.,family="binomial",data=boneTrain_pc1)
+full.log3<-glm(Fracture~. +(bonemed_fu * bonetreat) + (momfrac  * fracscore),family="binomial",data=boneTrain_pc1)
+step.log2<-full.log2 %>% stepAIC(trace=FALSE)
+step.log3<-full.log3 %>% stepAIC(trace=FALSE)
+summary(step.log3)#No change to AIC of 399 and PC1 was excluded.
+summary(full.log3)
+
+exp(cbind("Odds ratio" = coef(step.log2), confint.default(step.log2, level = 0.95)))
+vif(step.log2)
+
+
+
+library(vcdExtra)
+summary(HLtest(full.log2)) #Hosmer-Lemeshow Chi-Square value is high 0.8515, therefore there is no  model is a good fit on training. we need to test it on test set.
+#this test does not takeover fitting into account and tends to have low power
+
+```
+
+### Comments
+
+* There is no major difference between the two models. 
+* This is not surprising because the baseline model kept approximately only 1 of the continuous variable. The PCs did not yield substantial separations.
+* Regardless we should use the PCs just because it eliminates multicolinearity.  
+
+
+
+
+###LASSO fit.  
+
+
+
+```{r}
+library(glmnet)
+library(bestglm)
+
+dat.train.xx <- model.matrix(Fracture~., data = boneTrain_pc1)
+head(dat.train.xx)
+
+
+dat.train.y<-boneTrain_pc1[,12]
+cvfit1 <- cv.glmnet(dat.train.xx, dat.train.y, family = "binomial", type.measure = "class", nlambda = 1000)
+plot(cvfit1)
+coef(cvfit1, s = "lambda.min")
+#CV misclassification error rate is little below .1
+print("CV Error Rate:")
+cvfit1$cvm[which(cvfit1$lambda==cvfit1$lambda.min)]
+
+#Optimal penalty
+print("Penalty Value:")
+cvfit1$lambda.min
+
+#For final model predictions go ahead and refit lasso using entire
+#data set
+finalmodel1<-glmnet(dat.train.xx, dat.train.y, family = "binomial",lambda=cvfit1$lambda.min)
+finalmodel1
+
+```
+
+
+Confusion Matrix, Prediction Metrics, and choosing a cutoff
+Lets compare the stepwise and lasso models using the test set. 
+
+Preprocess the test set
+
+
+
+```{r}
+
+
+
+testpc.result<-prcomp(boneTest[,3:6],scale.=TRUE) #scale =True will use correlation matrix instead of the covariance.
+testpc.scores<-testpc.result$x
+testpc.scores<-data.frame(testpc.scores)
+testpc.scores$sub_id<-boneTest$sub_id
+testpc.result
+str(testpc.scores)
+boneTest_pc <- merge(boneTest, testpc.scores, by = "sub_id") #add PCs to the dataset, remove the previous raw attributes.
+
+
+```
+
+
+#scree plot
+```{r}
+#Scree plot
+eigenvals<-(testpc.result$sdev)^2
+plot(1:4,eigenvals/sum(eigenvals),type="l",main="Scree Plot PC's",ylab="Prop. Var. Explained",ylim=c(0,1))
+cumulative.prop<-cumsum(eigenvals/sum(eigenvals))
+lines(1:4,cumulative.prop,lty=2)
+
+
+#Use ggplot2 to plot the first few pc's
+ggplot(data = boneTest_pc, aes(x = PC1, y = PC2)) +
+  geom_point(aes(col=fracture), size=1)+
+  ggtitle("PCA of Bonemed")
+# we don't see very clear separation.
+
+
+#I get more than 80% of the variance explained by PC1 and PC2. PC 3 and 4 explain the remaining 20% So I will just use PC1 and PC2.
+
+
+attach(boneTest_pc)
+as.data.frame(colnames(boneTest_pc))
+boneTest_pc1 = subset(boneTest_pc, select=-c(sub_id,age,weight,height,bmi, PC3, PC4)) #remove the continuous variables + ensure fracture is last
+boneTest_pc1$Fracture = boneTest_pc1$fracture
+as.data.frame(colnames(boneTest_pc1))
+boneTest_pc1 = subset(boneTest_pc1, select=-c(fracture, site_id)) #last wrangling. Clean data set with PCs ready for refit.
+boneTest_pc1 = subset(boneTest_pc1, select=-c(Fracture1))
+str(boneTest_pc1) #sanity check
+```
+
+
+
+
+
+```{r}
+dat.test.x<-model.matrix(Fracture~., data = boneTest_pc1)
+
+fit.pred.lasso <- predict(finalmodel1, newx = dat.test.x, type = "response")
+
+
+```
+
+
+
+```{r}
+#Plot ROC for this
+#Create ROC curves (Remember if you have a test data set, you can use that to compare models)
+library(ROCR)
+pred1 <- prediction(fit.pred.lasso[,1], boneTest_pc1$Fracture)
+roc.perf1 = performance(pred1, measure = "tpr", x.measure = "fpr")
+auc.test1 <- performance(pred1, measure = "auc")
+auc.test1 <- auc.test1@y.values #0.556. Not too. it s close to the guesstimate line.
+
+#Plot ROC
+plot(roc.perf1,main="LASSO_test_base")
+abline(a=0, b= 1) #Ref line indicating poor performance
+text(x = .40, y = .6,paste("AUC = ", round(auc.test1[[1]],3), sep = "")) #0.617 not good at all
+
+
+
+
+```
+
+
+
+
+
+```{r}
+#Lets use the predicted probabilities to classify the observations and make a final confusion matrix for the two models.  We can use it to calculate error metrics.
+#Lets use a cutoff of 0.5 to make the classification.
+cutoff<-0.3
+class.lasso<-factor(ifelse(fit.pred.lasso>cutoff,"No","Yes"),levels=c("No","Yes")) #watch what u used for "success" class
+#class.step<-factor(ifelse(fit.pred.step>cutoff,"High","Low"),levels=c("Low","High"))
+
+#Confusion Matrix for Lasso
+conf.lasso<-table(class.lasso,boneTest_pc1$Fracture)
+print("Confusion matrix for LASSO")
+conf.lasso
+
+
+```
+
+We can compute the overall accuracy for the confusion matrix using the following code.  I've also included an additional code that allows for you to calculate overall accuracy without generating the table.
+
+```{r}
+#Accuracy of LASSO and Stepwise
+print("Overall accuracy for LASSO and Stepwise respectively")
+overall_acc = round(sum(diag(conf.lasso))/sum(conf.lasso) * 100,1)
+overall_acc
+
+
+
+
+print("Alternative calculations of accuracy")
+#Rather than making the calculations from the table, we can compute them more quickly using the following code which just checks if the prediction matches the truth and then computes the proportion.
+mean(class.lasso==boneTest_pc1$Fracture)
+
+
+```
+
+
+
+
+### Clustering.  
+
+```{r}
+#remove the response so it is truly unsupervised
+#boneTrainX <- boneTrain_pc1 %>% dplyr::select(-"Fracture")
+#boneTrainY <- boneTrain_pc1 %>% dplyr::select("Fracture")
+#str(boneTrainX)
+
+
+```
+
+
+* K-Means and Hierarchical clustering use Euclidean or Manhattan distance which are only suitable for continuous variables variables and NOT categorical variables.  
+* Gower distance 
+
+
+```{r}
+library(cluster)
+#exclude Fracture column
+#Calculating the gower distance.
+#Note that gower distance is 
+as.data.frame(colnames(boneTrain_pc1))
+gower_df <- daisy(boneTrain_pc1[,-12], metric = "gower")
+summary(gower_df)
+```
+
+
+* k-Means is sensitive to outliers which can significantly distort the mean value of the cluster. 
+
+Instead of taking the mean value of the objects in a cluster as a reference point, we can
+pick actual objects (i.e. observation) to represent the clusters, using one representative object per cluster.
+Each remaining object is assigned to the cluster of which the representative object is
+the most similar. The partitioning method is then performed based on the principle of
+minimizing the sum of the dissimilarities between each object p and its corresponding
+representative object. 
+Partitioning Around Medoids (PAM) algorithm is a realization of k-medoids clustering.
+Partitioning around medoids is an iterative clustering procedure with the following steps:
+	1. Choose k random entities to become the medoids
+	2. Assign every entity to its closest medoid (using our custom distance matrix in this case)
+	3. For each cluster, identify the observation that would yield the lowest average distance if it were to be re-assigned as the medoid. If so, make this observation the new medoid.
+	4. If at least one medoid has changed, return to step 2. Otherwise, end the algorithm.
+
+*Silhouette width is the most popular metric used to select the number of k.It is an internal validation metric which is an aggregated measure of how similar an observation is to its own cluster compared its closest neighboring cluster. 
+
+
+
+* choose a clustering algorithm to infer similarities/dissimilarities from the calculated distances.
+* Partitioning Around Medoids (PAM) algorithm goes along with the Gower distance. 
+* PAM is an iterative clustering procedure. Instead of centroids in K-means clustering, PAM iterates over and over until the medoids don't change their positions. The medoid of a cluster is a member of the cluster which is representative of the median of all the attributes under consideration.
+
+```{r}
+# Calculate silhouette width for many k using PAM
+silhouette <- c()
+silhouette = c(silhouette, NA)
+for(i in 2:10){
+  pam_clusters = pam(as.matrix(gower_df),
+                 diss = TRUE,
+                 k = i)
+  silhouette = c(silhouette ,pam_clusters$silinfo$avg.width)
+}
+
+
+
+# Plot sihouette width (higher is better)
+plot(1:10, silhouette,
+     xlab = "Clusters",
+     ylab = "Silhouette Width")
+lines(1:10, silhouette)
+```
+
+Looking at the Silhoutte Width, the higher the silhouette width the better, but I find it hard to comprehend segmenting the entire dataset to just 2 clusters so I chose between 3 and 5 as optimal clusters. 
+
+Let us view the clusters to select the optimal number based on how much separation e can see in 2D space.
+
+
+
+
+use the set.seed
+
+```{r}
+library(Rtsne)
+library(ggplot2)
+set.seed(123)
+tsne_object <- Rtsne(gower_df, is_distance = TRUE)
+tsne_df <- tsne_object$Y %>%
+  data.frame() %>%
+  setNames(c("X", "Y")) %>%
+  mutate(cluster = factor(pam_fit$clustering))
+ggplot(aes(x = X, y = Y), data = tsne_df) +
+  geom_point(aes(color = cluster))
+```
+
+
+
+
+### rinse and repeat for k = 5
+
+```{r}
+
+set.seed(123)
+pam_fit8 <- pam(gower_df, diss = TRUE, k=8)
+tsne_object <- Rtsne(gower_df, is_distance = TRUE)
+tsne_df <- tsne_object$Y %>%
+  data.frame() %>%
+  setNames(c("X", "Y")) %>%
+  mutate(cluster = factor(pam_fit8$clustering))
+ggplot(aes(x = X, y = Y), data = tsne_df) +
+  geom_point(aes(color = cluster))
+```
+
+
+RANGE OF Silhouette clusters
+https://web.archive.org/web/20111002220803/http://www.unesco.org:80/webworld/idams/advguide/Chapt7_1_1.htm
+
+INTERPRETATION
+
+0.71-1.0 A strong structure has been found
+
+0.51-0.70 A reasonable structure has been found
+
+0.26-0.50  The structure is weak and could be artificial. Try additional methods of data analysis.
+
+<= 0.25 No substantial structure has been found
+
+At k = 3 the separation looks good and better than k = 8 or 2. But given high silhouette width we will choose k = 2.
+
+
+
+We can fit each cluster onto the dataset to view what they look like for k = 2.
+Summary of each cluster
+
+
+
+```{r}
+k <- 2
+pam_fit <- pam(gower_df, diss = TRUE, k)
+pam_results.group <- boneTrain_pc1 %>%
+  dplyr::select(-Fracture) %>%
+  mutate(cluster = pam_fit$clustering) %>%
+  group_by(cluster) %>%
+  do(the_summary = summary(.))
+
+pam_results.group$the_summary
+```
+
+
+
+```{r}
+
+set.seed(123)
+pam_fit <- pam(gower_df, diss = TRUE, k=2)
+tsne_object <- Rtsne(gower_df, is_distance = TRUE)
+tsne_df <- tsne_object$Y %>%
+  data.frame() %>%
+  setNames(c("X", "Y")) %>%
+  mutate(cluster = factor(pam_fit$clustering))
+ggplot(aes(x = X, y = Y), data = tsne_df) +
+  geom_point(aes(color = cluster))
+```
+
+
+Typical values of members belonging to each cluster
+```{r}
+boneTrain_pc1[pam_fit$medoids, ]
+
+```
+
+
+
+
+Results of clusters are added as new attributes with each observation assigned its cluster number and Fracture response placed as last attribute.
+Adding response to cluster results
+```{r}
+pam_results <- boneTrain_pc1 %>%
+  mutate(cluster = pam_fit$clustering)
+
+
+pam_results["Fracture1"] = boneTrain_pc1$Fracture
+pam_results = subset(pam_results, select=-c(Fracture))
+pam_results$cluster <- factor(pam_results$cluster)
+str(pam_results)
+
+head(pam_results)
+
+
+#View to see if the Clusters can be good predictors for Fracture based on proportions. Yes they are, especially 1 and 3  
+prop.table(table(pam_results$Fracture1, pam_results$cluster),2)
+
+
+mymat<-table(pam_results$Fracture1,pam_results$cluster)
+
+#Conducting a chi square test to affirm that we can use the clusters as predictors. 
+chisq.test(mymat,correct=TRUE) #at pvalue = 0.00113 we reject null, variables are dependent
+
+
+```
+
+
+
+
+most similar patients
+```{r}
+gower_mat <- as.matrix(gower_df)
+#' Print most similar clients
+boneTrain_pc1[which(gower_mat == min(gower_mat[gower_mat != min(gower_mat)]), arr.ind = TRUE)[1, ], ]
+```
+
+Most dissimilar patients
+```{r}
+#Print most dissimilar clients
+boneTrain_pc1[which(gower_mat == max(gower_mat[gower_mat != max(gower_mat)]), arr.ind = TRUE)[1, ], ]
+```
+
+
+
+
+#Model Fit the clustered dataset
+
+```{r}
+library(glmnet)
+
+
+#Complex linear model for objective 2. It inlcudes interaction variables.
+
+model.train = glm(Fracture1 ~ . +(raterisk * bonetreat) + (momfrac  * fracscore), data=pam_results,family = binomial(link="logit")) #AIC = 413 on train set!
+
+summary(model.train)
+
+#For explainability, display the odds ratio
+exp(cbind("Odds ratio" = coef(model.train), confint.default(model.train, level = 0.95)))
+
+
+
+#Build lasso and predict on test for the clustered data set.
+pam_results.xx <- model.matrix(Fracture1~., data = pam_results)
+head(pam_results.xx)
+
+pam_results.y<-pam_results[,13]
+cvfit <- cv.glmnet(pam_results.xx, pam_results.y, family = "binomial", type.measure = "class", nlambda = 1000)
+plot(cvfit)
+coef(cvfit, s = "lambda.min")
+#CV misclassification error rate is little below .1
+print("CV Error Rate:")
+cvfit$cvm[which(cvfit$lambda==cvfit$lambda.min)] #0.22
+
+#Optimal penalty
+print("Penalty Value:")
+cvfit$lambda.min
+
+#For final model predictions go ahead and refit lasso using entire
+#data set
+finalmodel<-glmnet(pam_results.xx, pam_results.y, family = "binomial",lambda=cvfit$lambda.min)
+summary(finalmodel)
+
+
+```
+
+
+
+
+Prepare the test set and use it to evaluate the model.
+train a classifier, using the cluster labels as training data.
+
+
+```{r}
+
+pam_results.test <- pam_results
+
+pam_results.test$cluster1 = pam_results.test$cluster
+pam_results.test1 = subset(pam_results.test, select=-c(cluster))
+
+
+#predictor names must match otherwise calling predict() with throw exception.
+boneTest_pc1$Fracture1 = boneTest_pc1$Fracture
+boneTest_pc3 = subset(boneTest_pc1, select=-c(Fracture))
+
+
+```
+
+```{r}
+
+```
+
+```{r}
+#use random forest to assign the clustered distance of the trainset to the test.
+
+library(randomForest)
+set.seed(123)
+cluster_train.rT <- randomForest(cluster1~., data=pam_results.test1, importance =TRUE, mtry=round(sqrt(dim(pam_results.test1)[2]-1), digits = 0), ntree=1000)
+
+cluster_train.rT #error rate for the assignment is very low = 1.25%
+
+boneTest_pc3$cluster_pred <- predict(cluster_train.rT, newdata = boneTest_pc3, "class")
+str(boneTest_pc3) #Clusters are now predicted for test set.
+
+#reorder columns to make Fracture 1 last
+boneTest_pc3 = boneTest_pc3[,c(1:11, 13,12)]
+
+str(boneTest_pc3) #sanity check
+
+```
+
+
+
+```{r}
+
+#Evaluating the test on complex logistic model
+
+dat.test.xx<-model.matrix(Fracture1~., data = boneTest_pc3new)
+dat.test.y = boneTest_pc3new[,13]
+dat.train.y<-newAuto[,1]
+fit.pred2 <- predict(finalmodel, newx = dat.test.xx, type = "response")
+
+
+
+
+#Create ROC curves (Remember if you have a test data set, you can use that to compare models)
+library(ROCR)
+pred2 <- prediction(fit.pred2[,1], boneTest_pc3new$Fracture1)
+roc.perf2 = performance(pred2, measure = "tpr", x.measure = "fpr")
+auc.train2 <- performance(pred2, measure = "auc")
+auc.train2 <- auc.train2@y.values #0.771. Not too. it s close to the guesstimate line.
+
+#Plot ROC
+plot(roc.perf2,main="LASSO")
+abline(a=0, b= 1) #Ref line indicating poor performance
+text(x = .40, y = .6,paste("AUC = ", round(auc.train2[[1]],3), sep = ""))
+
+
+#confusionMatrix(fit.pred2, char(dat.test.y)) 
+
+library(MLmetrics) #for f1 score
+F1_Score( boneTest_pc3$Fracture1, bonemed_pred, positive = NULL)
+
+
+
+```
+
+
+
+
+
+
+
+```{r}
+
+boneTest_pc3new = boneTest_pc3 %>% rename(cluster = cluster_pred)
+str(boneTest_pc3new) #sanity check
+
+
+#Random Forest for the final actual model 
+library(randomForest)
+set.seed(123)  
+bonemed.rT <- randomForest(Fracture1~., data=pam_results, importance =TRUE, mtry=round(sqrt(dim(pam_results.test1)[2]-1), digits = 0), ntree=7000)
+
+#Random Forest model tuned for ntree at 500, 1000, 5000, 7000, 10000 and 20000. No significant changes after 7000.
+#mtry is the number of predictors to be randomly selected at any time.I found the formula in the documentation.
+
+set.seed(123)  
+bonemed_pred <- predict(bonemed.rT, newdata =boneTest_pc3new, type="class")
+bonemed.rT
+
+
+confusionMatrix(bonemed_pred, boneTest_pc3$Fracture1, positive = "Yes") #Accuracy = 0.73; Sensitivity = 0.906, Specificity = 0.20., Positive class = No.Preci = TP/TP+FP = 68/(68+20)=0.77
+
+library(MLmetrics) #this library was used to obtain F1 score
+F1_Score( boneTest_pc3$Fracture1, bonemed_pred, positive = NULL)
+
+```
+
+##Comments about the random forest.
+While the random forest is an improvement over the logistic model, the specificity remains quite low.
+
+```{r}
+
+#Create ROC curves for the random forest.
+library(ROCR)
+pred <- prediction(bonemed_pred[,1], boneTest_pc3new$Fracture1)
+roc.perf = performance(pred, measure = "tpr", x.measure = "fpr")
+auc.train <- performance(pred, measure = "auc")
+auc.train <- auc.train@y.values #0.771. Not too. it s close to the guesstimate line.
+
+#Plot ROC
+plot(roc.perf,main="Random Forest")
+abline(a=0, b= 1) #Ref line indicating poor performance
+text(x = .40, y = .6,paste("AUC = ", round(auc.train[[1]],3), sep = ""))
+
+
+
+
+```
+
+
+
+
